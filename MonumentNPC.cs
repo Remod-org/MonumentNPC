@@ -1,14 +1,15 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 using Oxide.Core;
+using Rust;
 using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Monument NPC Control", "RFC1920", "1.0.1")]
-    [Description("Autokill NPCs spawned by Rust to protect monument puzzles.")]
-    class MonumentNPC : RustPlugin
+    [Info("Monument NPC Control", "RFC1920", "1.0.2")]
+    [Description("Autokill NPCs spawned by Rust to protect monument puzzles, etc.")]
+    internal class MonumentNPC : RustPlugin
     {
         private ConfigData configData;
         public List<string> monNames = new List<string>();
@@ -18,11 +19,68 @@ namespace Oxide.Plugins
         private void OnServerInitialized()
         {
             FindMonuments();
+
+            if (configData.killOnStartup)
+            {
+                foreach (KeyValuePair<string, Vector3> mondata in monPos)
+                {
+                    if (mondata.Key == null) continue;
+                    if (configData.debug) Puts($"Checking monument {mondata.Key}");
+
+                    List<ScientistNPCNew> localsci = new List<ScientistNPCNew>();
+                    Vis.Entities(mondata.Value, monSize[mondata.Key].z, localsci);
+                    foreach (ScientistNPCNew sci in localsci)
+                    {
+                        sci.Kill();
+                    }
+                }
+            }
         }
 
         private void Init()
         {
             LoadConfigVariables();
+            AdjustBanditProtections();
+        }
+
+        private void AdjustBanditProtections()
+        {
+            if (!configData.BanditGuardDamage) return;
+            foreach (BanditGuard sci in UnityEngine.Object.FindObjectsOfType<BanditGuard>())
+            {
+                if (configData.debug) Puts("Found BanditGuard.  Adjusting protections...");
+                SetProtection(sci);
+            }
+        }
+
+        private void SetProtection(BanditGuard sci)
+        {
+            Dictionary<DamageType, float> protections = new Dictionary<DamageType, float>
+            {
+                { DamageType.Bite, 1f },
+                { DamageType.Cold, 1f },
+                { DamageType.ColdExposure, 1f },
+                { DamageType.Decay, 1f },
+                { DamageType.ElectricShock, 1f },
+                { DamageType.Hunger, 1f },
+                { DamageType.Radiation, 1f },
+                { DamageType.RadiationExposure, 1f }
+            };
+            sci.baseProtection.Clear();
+            foreach (var protection in protections)
+            {
+                sci.baseProtection.Add(protection.Key, protection.Value);
+            }
+            sci.startHealth = 100f;
+            sci.health = 100f;
+            sci.SendNetworkUpdateImmediate();
+        }
+
+        private void OnEntitySpawned(BanditGuard sci)
+        {
+            if (!configData.BanditGuardDamage) return;
+            if (configData.debug) Puts("BanditGuard spawning.  Adjusting protections...");
+            SetProtection(sci);
         }
 
         private void OnEntitySpawned(ScientistNPCNew sci)
@@ -30,13 +88,11 @@ namespace Oxide.Plugins
             if (configData.debug) Puts("ScientistNPCNew Spawned");
             foreach (KeyValuePair<string, Vector3> mondata in monPos)
             {
+                if (configData.debug) Puts($"Checking monument {mondata.Key}");
                 if (mondata.Key == null) continue;
-                if (!configData.killAtAllMonuments)
+                if (!configData.killAtAllMonuments && !configData.killMonuments.Contains(mondata.Key))
                 {
-                    if (!configData.killMonuments.Contains(mondata.Key))
-                    {
-                        continue;
-                    }
+                    continue;
                 }
                 if (Vector3.Distance(sci.transform.position, mondata.Value) < monSize[mondata.Key].z)
                 {
@@ -73,8 +129,7 @@ namespace Oxide.Plugins
                 {
                     if (ishapis)
                     {
-                        MatchCollection elem = Regex.Matches(monument.name, @"\w{4,}|\d{1,}");
-                        foreach (Match e in elem)
+                        foreach (Match e in Regex.Matches(monument.name, @"\w{4,}|\d{1,}"))
                         {
                             if (e.Value.Equals("MONUMENT")) continue;
                             if (e.Value.Contains("Label")) continue;
@@ -118,6 +173,8 @@ namespace Oxide.Plugins
         {
             public bool debug;
             public bool killAtAllMonuments;
+            public bool killOnStartup;
+            public bool BanditGuardDamage;
             public List<string> killMonuments = new List<string>();
             public List<string> allMonuments = new List<string>();
             public VersionNumber Version;
@@ -129,6 +186,7 @@ namespace Oxide.Plugins
             ConfigData config = new ConfigData
             {
                 debug = false,
+                BanditGuardDamage = true,
                 killAtAllMonuments = false,
                 killMonuments = new List<string>() { "Airfield", "Trainyard" },
                 Version = Version

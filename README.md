@@ -12,6 +12,7 @@ This should not affect NPC plugins at the time of writing.
 {
   "debug": false,
   "killAtAllMonuments": false,
+  "killOnStartup": false,
   "killMonuments": [
     "Airfield",
     "Trainyard"

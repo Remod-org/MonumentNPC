@@ -2,15 +2,19 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 using Oxide.Core;
+using Oxide.Core.Plugins;
 using Rust;
 using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Monument NPC Control", "RFC1920", "1.0.2")]
+    [Info("Monument NPC Control", "RFC1920", "1.0.3")]
     [Description("Autokill NPCs spawned by Rust to protect monument puzzles, etc.")]
     internal class MonumentNPC : RustPlugin
     {
+        [PluginReference]
+        private readonly Plugin MonBots, BotReSpawn;
+
         private ConfigData configData;
         public List<string> monNames = new List<string>();
         public SortedDictionary<string, Vector3> monPos  = new SortedDictionary<string, Vector3>();
@@ -25,13 +29,13 @@ namespace Oxide.Plugins
                 foreach (KeyValuePair<string, Vector3> mondata in monPos)
                 {
                     if (mondata.Key == null) continue;
-                    if (configData.debug) Puts($"Checking monument {mondata.Key}");
+                    if (configData.debug) Puts($"Checking monument {mondata.Key} with size {monSize[mondata.Key].z.ToString()}");
 
-                    List<ScientistNPCNew> localsci = new List<ScientistNPCNew>();
+                    List<ScientistNPC> localsci = new List<ScientistNPC>();
                     Vis.Entities(mondata.Value, monSize[mondata.Key].z, localsci);
-                    foreach (ScientistNPCNew sci in localsci)
+                    foreach (ScientistNPC sci in localsci)
                     {
-                        sci.Kill();
+                        CheckAndKill(sci);
                     }
                 }
             }
@@ -83,12 +87,28 @@ namespace Oxide.Plugins
             SetProtection(sci);
         }
 
-        private void OnEntitySpawned(ScientistNPCNew sci)
+        private bool CheckBotPlugins(ScientistNPC sci)
         {
-            if (configData.debug) Puts("ScientistNPCNew Spawned");
+            bool monbot = false;
+            bool botrespawn = false;
+
+            if (MonBots)
+            {
+                monbot = (bool)MonBots?.Call("IsMonBot", sci);
+            }
+            if (BotReSpawn)
+            {
+                // No idea if this exists
+                botrespawn = (bool)BotReSpawn?.Call("IsBotReSpawn", sci);
+            }
+            return monbot || botrespawn;
+        }
+
+        private void CheckAndKill(ScientistNPC sci)
+        {
             foreach (KeyValuePair<string, Vector3> mondata in monPos)
             {
-                if (configData.debug) Puts($"Checking monument {mondata.Key}");
+                //if (configData.debug) Puts($"Checking monument {mondata.Key}");
                 if (mondata.Key == null) continue;
                 if (!configData.killAtAllMonuments && !configData.killMonuments.Contains(mondata.Key))
                 {
@@ -96,12 +116,21 @@ namespace Oxide.Plugins
                 }
                 if (Vector3.Distance(sci.transform.position, mondata.Value) < monSize[mondata.Key].z)
                 {
-                    if (configData.debug) Puts($"Too close to {mondata.Key}.  Killing...");
-                    sci.Kill();
-                    return;
+                    if (!CheckBotPlugins(sci))
+                    {
+                        if (configData.debug) Puts($"Too close to {mondata.Key}.  Killing...");
+                        sci.Kill();
+                        return;
+                    }
                 }
             }
             if (configData.debug) Puts("Not in range of any monuments.");
+        }
+
+        private void OnEntitySpawned(ScientistNPC sci)
+        {
+            if (configData.debug) Puts("ScientistNPCNew Spawned");
+            timer.Once(1, () => CheckAndKill(sci));
         }
 
         private void FindMonuments()

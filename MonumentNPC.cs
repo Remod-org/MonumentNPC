@@ -8,12 +8,12 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Monument NPC Control", "RFC1920", "1.0.3")]
+    [Info("Monument NPC Control", "RFC1920", "1.0.4")]
     [Description("Autokill NPCs spawned by Rust to protect monument puzzles, etc.")]
     internal class MonumentNPC : RustPlugin
     {
         [PluginReference]
-        private readonly Plugin MonBots, BotReSpawn;
+        private readonly Plugin MonBots;
 
         private ConfigData configData;
         public List<string> monNames = new List<string>();
@@ -89,19 +89,21 @@ namespace Oxide.Plugins
 
         private bool CheckBotPlugins(ScientistNPC sci)
         {
-            bool monbot = false;
-            bool botrespawn = false;
-
             if (MonBots)
             {
-                monbot = (bool)MonBots?.Call("IsMonBot", sci);
+                return (bool)MonBots?.Call("IsMonBot", sci);
             }
-            if (BotReSpawn)
+
+            foreach (Component comp in sci.GetComponents(typeof(Component)))
             {
-                // No idea if this exists
-                botrespawn = (bool)BotReSpawn?.Call("IsBotReSpawn", sci);
+                if (comp.name.Contains("Tank") || comp.name.Contains("Hunters")
+                    || comp.name.Contains("ZombieNPC") || comp.name.Contains("BotReSpawn"))
+                {
+                    return true;
+                }
             }
-            return monbot || botrespawn;
+
+            return false;
         }
 
         private void CheckAndKill(ScientistNPC sci)

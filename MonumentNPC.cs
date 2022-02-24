@@ -8,8 +8,8 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Monument NPC Control", "RFC1920", "1.0.4")]
-    [Description("Autokill NPCs spawned by Rust to protect monument puzzles, etc.")]
+    [Info("Monument NPC Control", "RFC1920", "1.0.5")]
+    [Description("Autokill NPCs spawned by Rust to protect monument puzzles, tunnels, etc.")]
     internal class MonumentNPC : RustPlugin
     {
         [PluginReference]
@@ -36,6 +36,14 @@ namespace Oxide.Plugins
                     foreach (ScientistNPC sci in localsci)
                     {
                         CheckAndKill(sci);
+                    }
+                }
+                if (configData.killTunnelDwellers)
+                {
+                    foreach (TunnelDweller td in UnityEngine.Object.FindObjectsOfType<TunnelDweller>())
+                    {
+                        if (configData.debug) Puts("Killing TunnelDweller.");
+                        td?.Kill();
                     }
                 }
             }
@@ -96,6 +104,7 @@ namespace Oxide.Plugins
 
             foreach (Component comp in sci.GetComponents(typeof(Component)))
             {
+                if (string.IsNullOrEmpty(comp.name)) continue;
                 if (comp.name.Contains("Tank") || comp.name.Contains("Hunters")
                     || comp.name.Contains("ZombieNPC") || comp.name.Contains("BotReSpawn"))
                 {
@@ -116,22 +125,29 @@ namespace Oxide.Plugins
                 {
                     continue;
                 }
-                if (Vector3.Distance(sci.transform.position, mondata.Value) < monSize[mondata.Key].z)
+                if (Vector3.Distance(sci.transform.position, mondata.Value) < monSize[mondata.Key].z && !CheckBotPlugins(sci))
                 {
-                    if (!CheckBotPlugins(sci))
-                    {
-                        if (configData.debug) Puts($"Too close to {mondata.Key}.  Killing...");
-                        sci.Kill();
-                        return;
-                    }
+                    if (configData.debug) Puts($"Too close to {mondata.Key}.  Killing...");
+                    sci.Kill();
+                    return;
                 }
             }
             if (configData.debug) Puts("Not in range of any monuments.");
         }
 
+        private void OnEntitySpawned(TunnelDweller sci)
+        {
+            if (configData.debug) Puts("TunnelDweller Spawned");
+            if (configData.killTunnelDwellers)
+            {
+                if (configData.debug) Puts("...killing him.");
+                sci?.Kill();
+            }
+        }
+
         private void OnEntitySpawned(ScientistNPC sci)
         {
-            if (configData.debug) Puts("ScientistNPCNew Spawned");
+            if (configData.debug) Puts("ScientistNPC Spawned");
             timer.Once(1, () => CheckAndKill(sci));
         }
 
@@ -204,6 +220,7 @@ namespace Oxide.Plugins
         {
             public bool debug;
             public bool killAtAllMonuments;
+            public bool killTunnelDwellers;
             public bool killOnStartup;
             public bool BanditGuardDamage;
             public List<string> killMonuments = new List<string>();

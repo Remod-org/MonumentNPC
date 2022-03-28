@@ -8,7 +8,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Monument NPC Control", "RFC1920", "1.0.5")]
+    [Info("Monument NPC Control", "RFC1920", "1.0.6")]
     [Description("Autokill NPCs spawned by Rust to protect monument puzzles, tunnels, etc.")]
     internal class MonumentNPC : RustPlugin
     {
@@ -17,8 +17,8 @@ namespace Oxide.Plugins
 
         private ConfigData configData;
         public List<string> monNames = new List<string>();
-        public SortedDictionary<string, Vector3> monPos  = new SortedDictionary<string, Vector3>();
-        public SortedDictionary<string, Vector3> monSize = new SortedDictionary<string, Vector3>();
+        public Dictionary<string, Vector3> monPos  = new Dictionary<string, Vector3>();
+        public Dictionary<string, Vector3> monSize = new Dictionary<string, Vector3>();
 
         private void OnServerInitialized()
         {
@@ -79,20 +79,13 @@ namespace Oxide.Plugins
                 { DamageType.RadiationExposure, 1f }
             };
             sci.baseProtection.Clear();
-            foreach (var protection in protections)
+            foreach (KeyValuePair<DamageType, float> protection in protections)
             {
                 sci.baseProtection.Add(protection.Key, protection.Value);
             }
             sci.startHealth = 100f;
             sci.health = 100f;
             sci.SendNetworkUpdateImmediate();
-        }
-
-        private void OnEntitySpawned(BanditGuard sci)
-        {
-            if (!configData.BanditGuardDamage) return;
-            if (configData.debug) Puts("BanditGuard spawning.  Adjusting protections...");
-            SetProtection(sci);
         }
 
         private bool CheckBotPlugins(ScientistNPC sci)
@@ -104,7 +97,7 @@ namespace Oxide.Plugins
 
             foreach (Component comp in sci.GetComponents(typeof(Component)))
             {
-                if (string.IsNullOrEmpty(comp.name)) continue;
+                if (string.IsNullOrEmpty(comp?.name)) continue;
                 if (comp.name.Contains("Tank") || comp.name.Contains("Hunters")
                     || comp.name.Contains("ZombieNPC") || comp.name.Contains("BotReSpawn"))
                 {
@@ -117,6 +110,7 @@ namespace Oxide.Plugins
 
         private void CheckAndKill(ScientistNPC sci)
         {
+            if (sci == null) return;
             foreach (KeyValuePair<string, Vector3> mondata in monPos)
             {
                 //if (configData.debug) Puts($"Checking monument {mondata.Key}");
@@ -135,6 +129,29 @@ namespace Oxide.Plugins
             if (configData.debug) Puts("Not in range of any monuments.");
         }
 
+        private void OnEntitySpawned(ScientistNPC sci)
+        {
+            if (configData.debug) Puts("ScientistNPC Spawned");
+            timer.Once(1, () => CheckAndKill(sci));
+        }
+
+        private void OnEntitySpawned(BanditGuard sci)
+        {
+            if (!configData.BanditGuardDamage) return;
+            if (configData.debug) Puts("BanditGuard spawning.  Adjusting protections...");
+            SetProtection(sci);
+        }
+
+        private void OnEntitySpawned(UnderwaterDweller sci)
+        {
+            if (configData.debug) Puts("UnderwaterDweller Spawned");
+            if (configData.killUnderwaterDwellers)
+            {
+                if (configData.debug) Puts("...killing him.");
+                sci?.Kill();
+            }
+        }
+
         private void OnEntitySpawned(TunnelDweller sci)
         {
             if (configData.debug) Puts("TunnelDweller Spawned");
@@ -143,12 +160,6 @@ namespace Oxide.Plugins
                 if (configData.debug) Puts("...killing him.");
                 sci?.Kill();
             }
-        }
-
-        private void OnEntitySpawned(ScientistNPC sci)
-        {
-            if (configData.debug) Puts("ScientistNPC Spawned");
-            timer.Once(1, () => CheckAndKill(sci));
         }
 
         private void FindMonuments()
@@ -221,6 +232,7 @@ namespace Oxide.Plugins
             public bool debug;
             public bool killAtAllMonuments;
             public bool killTunnelDwellers;
+            public bool killUnderwaterDwellers;
             public bool killOnStartup;
             public bool BanditGuardDamage;
             public List<string> killMonuments = new List<string>();
